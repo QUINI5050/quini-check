@@ -2,6 +2,7 @@ import re
 import time
 import json
 import os
+import platform
 from datetime import datetime, timedelta
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -9,8 +10,6 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.chrome import ChromeDriverManager
-from webdriver_manager.core.os_manager import ChromeType
 
 URL_OFICIAL = "https://apps.loteriasantafe.gov.ar:8443/Extractos/paginas/mostrarQuini6.xhtml?display=0"
 HISTORIAL_FILE = "historial_sorteos.json"
@@ -123,7 +122,7 @@ def importar_desde_excel(archivo_excel="sorteos_historicos.xlsx"):
                 }
                 for mod, col in pozo_cols.items():
                     monto = str(fila.get(col, "No disponible"))
-                    pozos[mod] = {"monto": monto, "estado": "desconocido", "ganadores": 0, "aciertos_ganadores": 0}
+                    pozos[mod] = {"monto": monto, "estado": "?", "ganadores": 0, "aciertos_ganadores": 0}
                 
                 if len(resultados) >= 4:
                     historial[numero] = {
@@ -137,8 +136,6 @@ def importar_desde_excel(archivo_excel="sorteos_historicos.xlsx"):
                         "fecha_consulta": datetime.now().strftime("%d/%m/%Y %H:%M")
                     }
                     importados += 1
-                else:
-                    errores.append(f"Sorteo {numero}: solo {len(resultados)} modalidades")
             except Exception as e:
                 errores.append(str(e))
         
@@ -186,21 +183,6 @@ def exportar_historial_a_excel(archivo_salida="historial_completo.xlsx"):
 # SCRAPING
 # ============================================================
 
-def _crear_driver():
-    chrome_options = Options()
-    chrome_options.add_argument("--headless=new")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--window-size=1920,1080")
-    chrome_options.add_argument("--user-agent=Mozilla/5.0")
-    chrome_options.add_argument("--ignore-certificate-errors")
-    
-    # Selenium Manager (incluido en Selenium 4.11+) descarga Chrome automáticamente
-    driver = webdriver.Chrome(options=chrome_options)
-    print("✅ Chrome iniciado con Selenium Manager")
-    return driver
-    
 def _extraer_numeros_de_lista(texto):
     todos = re.findall(r'\b(\d{1,2})\b', texto)
     numeros = []
@@ -217,16 +199,12 @@ def _buscar_modalidad_en_texto(texto_completo, nombre_modalidad):
     return _extraer_numeros_de_lista(texto_completo[pos:pos+600])
 
 def _analizar_estado_pozo(texto_bloque, modalidad):
-    resultado = {"monto": "No disponible", "estado": "desconocido", "ganadores": 0, "aciertos_ganadores": 0}
+    resultado = {"monto": "No disponible", "estado": "?", "ganadores": 0, "aciertos_ganadores": 0}
     try:
         m = re.search(r'1[°º]\s*Premio\s+([\d\.]+,\d{2})', texto_bloque)
-        if m:
-            resultado["monto"] = f"$ {m.group(1)}"
-        
+        if m: resultado["monto"] = f"$ {m.group(1)}"
         if re.search(r'VACANTE', texto_bloque, re.IGNORECASE):
-            resultado["estado"] = "VACANTE"
-            return resultado
-        
+            resultado["estado"] = "VACANTE"; return resultado
         for linea in texto_bloque.split('\n'):
             if '1° Premio' in linea or '1º Premio' in linea:
                 if modalidad == "Siempre Sale":
@@ -244,11 +222,8 @@ def _analizar_estado_pozo(texto_bloque, modalidad):
                         resultado["aciertos_ganadores"] = 6
                         resultado["estado"] = "GANADO"
                 break
-        
-        if resultado["estado"] == "desconocido":
-            resultado["estado"] = "VACANTE"
-    except:
-        pass
+        if resultado["estado"] == "?": resultado["estado"] = "VACANTE"
+    except: pass
     return resultado
 
 def _analizar_estado_pozo_extra(texto_bloque):
@@ -260,8 +235,7 @@ def _analizar_estado_pozo_extra(texto_bloque):
                 resultado["monto"] = f"$ {m.group(1)}"
                 resultado["ganadores"] = int(m.group(2).replace('.', ''))
                 break
-    except:
-        pass
+    except: pass
     return resultado
 
 def obtener_resultados():
@@ -282,92 +256,96 @@ def obtener_resultados_por_numero(numero_sorteo=None):
         if res_hist and len(res_hist) >= 4:
             return res_hist, poz_hist, inf_hist
     
-    driver = None
-    try:
-        driver = _crear_driver()
-        url = URL_OFICIAL if not numero_sorteo else f"{URL_OFICIAL}&sorteo={numero_sorteo}"
-        driver.get(url)
-        
-        wait = WebDriverWait(driver, 30)
-        wait.until(EC.presence_of_element_located((By.TAG_NAME, "b")))
-        time.sleep(2)
-        
-        body_text = driver.find_element(By.TAG_NAME, "body").text
-        lineas = body_text.split('\n')
-        
-        # Fecha y número
-        mes_anio = ""
-        for linea in lineas:
-            if re.match(r'(Enero|Febrero|Marzo|Abril|Mayo|Junio|Julio|Agosto|Septiembre|Octubre|Noviembre|Diciembre)\s+\d{4}', linea, re.IGNORECASE):
-                mes_anio = linea.strip()
-            match = re.match(r'(Miércoles|Miercoles|Domingo)\s+(\d{1,2})\s*-\s*(\d{3,5})', linea, re.IGNORECASE)
-            if match:
-                numero_sorteo_str = f"N° {match.group(3)}"
-                fecha_sorteo = f"{match.group(1).capitalize()} {match.group(2)}"
-                if mes_anio:
-                    fecha_sorteo += f" de {mes_anio}"
-        
-        # Modalidades
-        h3_elements = driver.find_elements(By.TAG_NAME, "h3")
-        for h3 in h3_elements:
-            titulo = h3.text.strip().upper()
-            modalidad_nombre = None
-            for clave, valor in MAPEO_MODALIDADES.items():
-                if clave in titulo:
-                    modalidad_nombre = valor
-                    break
+    # Intentar con Selenium (solo en Windows o donde haya Chrome)
+    es_windows = platform.system() == "Windows"
+    if es_windows:
+        try:
+            chrome_options = Options()
+            chrome_options.add_argument("--headless=new")
+            chrome_options.add_argument("--no-sandbox")
+            chrome_options.add_argument("--disable-dev-shm-usage")
+            chrome_options.add_argument("--disable-gpu")
+            chrome_options.add_argument("--window-size=1920,1080")
+            chrome_options.add_argument("--ignore-certificate-errors")
             
-            if modalidad_nombre:
-                numeros = []
-                try:
-                    padre = h3.find_element(By.XPATH, "./..")
-                    for b in padre.find_elements(By.TAG_NAME, "b"):
-                        texto = b.text.strip()
-                        if texto.isdigit():
-                            num = int(texto)
-                            if 1 <= num <= 45 and num not in numeros:
-                                numeros.append(num)
-                except:
-                    pass
+            driver = webdriver.Chrome(options=chrome_options)
+            url = URL_OFICIAL if not numero_sorteo else f"{URL_OFICIAL}&sorteo={numero_sorteo}"
+            driver.get(url)
+            
+            wait = WebDriverWait(driver, 30)
+            wait.until(EC.presence_of_element_located((By.TAG_NAME, "b")))
+            time.sleep(2)
+            
+            body_text = driver.find_element(By.TAG_NAME, "body").text
+            lineas = body_text.split('\n')
+            
+            mes_anio = ""
+            for linea in lineas:
+                if re.match(r'(Enero|Febrero|Marzo|Abril|Mayo|Junio|Julio|Agosto|Septiembre|Octubre|Noviembre|Diciembre)\s+\d{4}', linea, re.IGNORECASE):
+                    mes_anio = linea.strip()
+                match = re.match(r'(Miércoles|Miercoles|Domingo)\s+(\d{1,2})\s*-\s*(\d{3,5})', linea, re.IGNORECASE)
+                if match:
+                    numero_sorteo_str = f"N° {match.group(3)}"
+                    fecha_sorteo = f"{match.group(1).capitalize()} {match.group(2)}"
+                    if mes_anio: fecha_sorteo += f" de {mes_anio}"
+            
+            h3_elements = driver.find_elements(By.TAG_NAME, "h3")
+            for h3 in h3_elements:
+                titulo = h3.text.strip().upper()
+                modalidad_nombre = None
+                for clave, valor in MAPEO_MODALIDADES.items():
+                    if clave in titulo:
+                        modalidad_nombre = valor
+                        break
                 
-                if modalidad_nombre != "Premio Extra" and len(numeros) < 6:
-                    texto_cercano = _buscar_modalidad_en_texto(body_text, modalidad_nombre)
-                    if texto_cercano:
-                        for n in texto_cercano:
-                            if 1 <= n <= 45 and n not in numeros and len(numeros) < 6:
-                                numeros.append(n)
-                
-                if modalidad_nombre == "Premio Extra":
-                    resultados[modalidad_nombre] = sorted(numeros[:18]) if len(numeros) >= 18 else sorted(numeros)
-                elif len(numeros) == 6:
-                    resultados[modalidad_nombre] = sorted(numeros)
-        
-        # Pozos
-        bloques = {}
-        actual = None
-        for linea in lineas:
-            for clave, valor in MAPEO_MODALIDADES.items():
-                if clave in linea.strip().upper():
-                    actual = valor
-                    if actual not in bloques:
-                        bloques[actual] = []
-                    break
-            if actual:
-                bloques[actual].append(linea)
-        
-        for mod, bloque in bloques.items():
-            txt = '\n'.join(bloque)
-            pozos[mod] = _analizar_estado_pozo_extra(txt) if mod == "Premio Extra" else _analizar_estado_pozo(txt, mod)
-        
-    except Exception as e:
-        print(f"Error: {e}")
-        resultados = {}
-        pozos = {}
-    finally:
-        if driver:
+                if modalidad_nombre:
+                    numeros = []
+                    try:
+                        padre = h3.find_element(By.XPATH, "./..")
+                        for b in padre.find_elements(By.TAG_NAME, "b"):
+                            texto = b.text.strip()
+                            if texto.isdigit():
+                                num = int(texto)
+                                if 1 <= num <= 45 and num not in numeros:
+                                    numeros.append(num)
+                    except: pass
+                    
+                    if modalidad_nombre != "Premio Extra" and len(numeros) < 6:
+                        txt = _buscar_modalidad_en_texto(body_text, modalidad_nombre)
+                        if txt:
+                            for n in txt:
+                                if 1 <= n <= 45 and n not in numeros and len(numeros) < 6:
+                                    numeros.append(n)
+                    
+                    if modalidad_nombre == "Premio Extra":
+                        resultados[modalidad_nombre] = sorted(numeros[:18]) if len(numeros) >= 18 else sorted(numeros)
+                    elif len(numeros) == 6:
+                        resultados[modalidad_nombre] = sorted(numeros)
+            
+            bloques = {}; actual = None
+            for linea in lineas:
+                for clave, valor in MAPEO_MODALIDADES.items():
+                    if clave in linea.strip().upper():
+                        actual = valor
+                        if actual not in bloques: bloques[actual] = []
+                        break
+                if actual: bloques[actual].append(linea)
+            
+            for mod, bloque in bloques.items():
+                txt = '\n'.join(bloque)
+                pozos[mod] = _analizar_estado_pozo_extra(txt) if mod == "Premio Extra" else _analizar_estado_pozo(txt, mod)
+            
             driver.quit()
+            print("✅ Datos obtenidos con Selenium")
+        except Exception as e:
+            print(f"⚠️ Selenium falló: {e}")
+            resultados = {}
+    else:
+        print("☁️ Entorno cloud detectado, usando fuente alternativa...")
     
+    # Si no hay resultados, usar fuente alternativa
     if len(resultados) < 4:
+        print("📡 Usando fuente alternativa (quinielas.com.ar)...")
         resultados, pozos, numero_sorteo_str, fecha_sorteo = _fuente_alternativa()
     
     info_sorteo = {
@@ -412,19 +390,16 @@ def _fuente_alternativa():
         if ex and len(ex) >= 6:
             resultados["Premio Extra"] = sorted(ex[:18]) if len(ex) >= 18 else sorted(ex)
             pozos["Premio Extra"] = {"monto": "Ver web", "estado": "GANADO", "ganadores": 0, "aciertos_ganadores": 6}
-    except:
-        pass
+    except Exception as e:
+        print(f"Error fuente alternativa: {e}")
     
     return resultados if len(resultados) >= 4 else {}, pozos, numero, fecha
 
 def obtener_fecha_sorteo_actual():
     hoy = datetime.now()
     d, h = hoy.weekday(), hoy.hour
-    
     if d == 2 and h >= 21: return "Hoy (miércoles)"
     if d == 6 and h >= 21: return "Hoy (domingo)"
-    if d in [3, 4, 5]:
-        return f"Último: miércoles {(hoy - timedelta(days=d-2)).strftime('%d/%m')}"
-    if d in [0, 1]:
-        return f"Último: domingo {(hoy - timedelta(days=d+1 if d==0 else 1)).strftime('%d/%m')}"
+    if d in [3,4,5]: return f"Último: miércoles {(hoy - timedelta(days=d-2)).strftime('%d/%m')}"
+    if d in [0,1]: return f"Último: domingo {(hoy - timedelta(days=d+1 if d==0 else 1)).strftime('%d/%m')}"
     return "Hoy a las 21:15"
