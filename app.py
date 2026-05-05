@@ -243,7 +243,14 @@ with col_btn2:
         if res and len(res)>=4:
             st.session_state.update({"resultados_cache":res, "pozos_cache":poz, "info_sorteo_cache":inf, "ultimo_chequeo":datetime.now().strftime("%d/%m %H:%M"), "mostrar_detalle":False})
             st.rerun()
-        else: st.error("No se pudieron obtener los resultados")
+                    else:
+                st.error("No se pudieron obtener los resultados")
+                # Mostrar el error real
+                import traceback
+                try:
+                    obtener_resultados()
+                except Exception as e:
+                    st.code(traceback.format_exc())
 
 if st.session_state["resultados_cache"]:
     resultados = st.session_state["resultados_cache"]
