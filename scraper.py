@@ -240,7 +240,9 @@ def _crear_driver():
     except Exception:
         # Fallback para Windows local con ChromeDriver
         service = Service(ChromeDriverManager().install())
-        return webdriver.Chrome(service=service, options=chrome_options)def _extraer_numeros_de_lista(texto):
+        return webdriver.Chrome(service=service, options=chrome_options)
+        
+def _extraer_numeros_de_lista(texto):
     todos = re.findall(r'\b(\d{1,2})\b', texto)
     numeros = []
     for n in todos:
