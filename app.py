@@ -1,6 +1,20 @@
 import streamlit as st
 import streamlit.components.v1 as components
 import json
+import os
+import subprocess
+import sys
+
+# Instalar navegadores de Playwright si no existen
+@st.cache_resource
+def install_playwright():
+    try:
+        subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=True, capture_output=True)
+        print("✅ Playwright Chromium instalado")
+    except Exception as e:
+        print(f"⚠️ Error instalando Playwright: {e}")
+
+install_playwright()
 from datetime import datetime
 from checker import revisar_premios
 from notificar import enviar_correo_con_pdf  # Lo usamos para enviar HTML también
