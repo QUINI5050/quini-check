@@ -239,18 +239,23 @@ with st.sidebar:
 col_btn1, col_btn2, col_btn3 = st.columns([1, 2, 1])
 with col_btn2:
     if st.button("🎯 CARGAR ÚLTIMO SORTEO", type="primary", use_container_width=True):
-        with st.spinner("🔍 Obteniendo..."): res, poz, inf = obtener_resultados()
-        if res and len(res)>=4:
-            st.session_state.update({"resultados_cache":res, "pozos_cache":poz, "info_sorteo_cache":inf, "ultimo_chequeo":datetime.now().strftime("%d/%m %H:%M"), "mostrar_detalle":False})
-            st.rerun()
-                    else:
-                st.error("No se pudieron obtener los resultados")
-                # Mostrar el error real
+        st.session_state["sorteo_seleccionado"] = "ultimo"
+        st.session_state["mostrar_detalle"] = False
+        with st.spinner("🔍 Obteniendo..."):
+            try:
+                res, poz, inf = obtener_resultados()
+                if res and len(res) >= 4:
+                    st.session_state["resultados_cache"] = res
+                    st.session_state["pozos_cache"] = poz
+                    st.session_state["info_sorteo_cache"] = inf
+                    st.session_state["ultimo_chequeo"] = datetime.now().strftime("%d/%m %H:%M")
+                    st.rerun()
+                else:
+                    st.error("No se pudieron obtener los resultados. Revisá los logs.")
+            except Exception as e:
                 import traceback
-                try:
-                    obtener_resultados()
-                except Exception as e:
-                    st.code(traceback.format_exc())
+                st.error(f"Error: {e}")
+                st.code(traceback.format_exc())
 
 if st.session_state["resultados_cache"]:
     resultados = st.session_state["resultados_cache"]
