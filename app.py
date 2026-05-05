@@ -254,8 +254,12 @@ with col_btn2:
                     st.error("No se pudieron obtener los resultados. Revisá los logs.")
             except Exception as e:
                 import traceback
+                error_msg = traceback.format_exc()
                 st.error(f"Error: {e}")
-                st.code(traceback.format_exc())
+                st.code(error_msg)
+                # También guardar en archivo para ver en logs
+                with open("error_log.txt", "w") as f:
+                    f.write(error_msg)
 
 if st.session_state["resultados_cache"]:
     resultados = st.session_state["resultados_cache"]
