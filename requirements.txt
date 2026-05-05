@@ -2,6 +2,8 @@ streamlit
 requests
 beautifulsoup4
 lxml
-playwright
+selenium
+webdriver-manager
 openpyxl
 pandas
+weasyprint
