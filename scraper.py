@@ -196,10 +196,11 @@ def _crear_driver():
     chrome_options.add_argument("--user-agent=Mozilla/5.0")
     chrome_options.add_argument("--ignore-certificate-errors")
     
-    # Chrome for Testing: descarga Chromium oficial de Google
-    service = Service(ChromeDriverManager(chrome_type=ChromeType.CHROMIUM).install())
-    return webdriver.Chrome(service=service, options=chrome_options)
-
+    # Selenium Manager (incluido en Selenium 4.11+) descarga Chrome automáticamente
+    driver = webdriver.Chrome(options=chrome_options)
+    print("✅ Chrome iniciado con Selenium Manager")
+    return driver
+    
 def _extraer_numeros_de_lista(texto):
     todos = re.findall(r'\b(\d{1,2})\b', texto)
     numeros = []
