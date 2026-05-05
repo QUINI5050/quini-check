@@ -1,0 +1,10 @@
+streamlit
+requests
+beautifulsoup4
+lxml
+selenium
+webdriver-manager
+openpyxl
+pandas
+weasyprint
+pdfkit
