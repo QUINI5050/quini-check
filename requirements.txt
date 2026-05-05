@@ -7,4 +7,3 @@ webdriver-manager
 openpyxl
 pandas
 weasyprint
-pdfkit
